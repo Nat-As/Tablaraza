@@ -1,2 +1,2 @@
 # Tablarasa
-A free and open source iso image flashing tool
+A free and open source iso image flashing tool that doesn't require admin.
