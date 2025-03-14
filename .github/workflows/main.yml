@@ -1,0 +1,130 @@
+name: Build Executables
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [created]
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pillow psutil pywin32
+          pip install -r requirements.txt
+        continue-on-error: true
+      
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --windowed --icon=resources/icon.ico --name=TablaRaza main.py
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: TablaRaza-Windows
+          path: dist/TablaRaza.exe
+          
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/TablaRaza.exe
+          asset_name: TablaRaza-Windows.exe
+          tag: ${{ github.ref }}
+          overwrite: true
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pillow psutil
+          pip install -r requirements.txt
+        continue-on-error: true
+      
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --windowed --icon=resources/icon.icns --name=TablaRaza main.py
+          
+      - name: Create DMG
+        run: |
+          mkdir -p dist/dmg
+          cp -r "dist/TablaRaza.app" dist/dmg/
+          hdiutil create -volname "TablaRaza" -srcfolder dist/dmg -ov -format UDZO dist/TablaRaza-MacOS.dmg
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: TablaRaza-MacOS
+          path: dist/TablaRaza-MacOS.dmg
+          
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/TablaRaza-MacOS.dmg
+          asset_name: TablaRaza-MacOS.dmg
+          tag: ${{ github.ref }}
+          overwrite: true
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pillow psutil
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-dev
+          pip install -r requirements.txt
+        continue-on-error: true
+      
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --name=TablaRaza main.py
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: TablaRaza-Linux
+          path: dist/TablaRaza
+          
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/TablaRaza
+          asset_name: TablaRaza-Linux
+          tag: ${{ github.ref }}
+          overwrite: true
