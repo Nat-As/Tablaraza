@@ -13,10 +13,10 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
@@ -32,7 +32,7 @@ jobs:
           pyinstaller --onefile --windowed --icon=resources/icon.ico --name=TablaRaza main.py
           
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: TablaRaza-Windows
           path: dist/TablaRaza.exe
@@ -50,10 +50,10 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
@@ -75,7 +75,7 @@ jobs:
           hdiutil create -volname "TablaRaza" -srcfolder dist/dmg -ov -format UDZO dist/TablaRaza-MacOS.dmg
           
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: TablaRaza-MacOS
           path: dist/TablaRaza-MacOS.dmg
@@ -93,10 +93,10 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
@@ -114,7 +114,7 @@ jobs:
           pyinstaller --onefile --name=TablaRaza main.py
           
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: TablaRaza-Linux
           path: dist/TablaRaza
