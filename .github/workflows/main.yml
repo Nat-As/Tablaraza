@@ -9,6 +9,11 @@ on:
   release:
     types: [created]
 
+# Add permissions at the top level
+permissions:
+  contents: write  # Required for creating releases and uploading assets
+  packages: read
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -30,13 +35,6 @@ jobs:
         run: |
           pyinstaller --onefile --windowed --name=TablaRaza main.py
           
-      - name: Debug - List directory contents
-        run: |
-          echo "Contents of current directory:"
-          dir
-          echo "Contents of dist directory:"
-          dir dist
-          
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -57,26 +55,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller pillow psutil
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements.txt
       
       - name: Build executable
         run: |
           pyinstaller --onefile --windowed --name=TablaRaza main.py
-          
-      - name: Debug - List directory contents
-        run: |
-          echo "Contents of current directory:"
-          ls -la
-          echo "Contents of dist directory:"
-          ls -la dist
           
       - name: Create DMG
         run: |
           mkdir -p dist/dmg
           cp -r "dist/TablaRaza.app" dist/dmg/
           hdiutil create -volname "TablaRaza" -srcfolder dist/dmg -ov -format UDZO dist/TablaRaza-MacOS.dmg
-          echo "Contents of dist directory after DMG creation:"
-          ls -la dist
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -106,13 +95,6 @@ jobs:
         run: |
           pyinstaller --onefile --name=TablaRaza main.py
           
-      - name: Debug - List directory contents
-        run: |
-          echo "Contents of current directory:"
-          ls -la
-          echo "Contents of dist directory:"
-          ls -la dist
-          
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -122,6 +104,7 @@ jobs:
   create-release:
     needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
+    # Only run on manual trigger or when tagged
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all artifacts
@@ -163,6 +146,8 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: release-files/*
           draft: false
@@ -172,6 +157,8 @@ jobs:
         id: create_manual_release
         uses: softprops/action-gh-release@v1
         if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ github.run_number }}.0.0
           name: Release v${{ github.run_number }}.0.0
