@@ -1,13 +1,13 @@
-name: Build Executables
+name: Build and Release
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:  # Allows manual triggering
   release:
     types: [created]
-  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   build-windows:
@@ -24,29 +24,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller pillow psutil pywin32
-          pip install -r requirements.txt
-        continue-on-error: true
+          if Test-Path requirements.txt; then pip install -r requirements.txt; fi
       
       - name: Build executable
         run: |
           pyinstaller --onefile --windowed --name=TablaRaza main.py
+          
+      - name: Debug - List directory contents
+        run: |
+          echo "Contents of current directory:"
+          dir
+          echo "Contents of dist directory:"
+          dir dist
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TablaRaza-Windows
           path: dist/TablaRaza.exe
-          
-      - name: Upload to release
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/TablaRaza.exe
-          asset_name: TablaRaza-Windows.exe
-          asset_content_type: application/octet-stream
 
   build-macos:
     runs-on: macos-latest
@@ -62,35 +57,32 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller pillow psutil
-          pip install -r requirements.txt
-        continue-on-error: true
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       
       - name: Build executable
         run: |
           pyinstaller --onefile --windowed --name=TablaRaza main.py
+          
+      - name: Debug - List directory contents
+        run: |
+          echo "Contents of current directory:"
+          ls -la
+          echo "Contents of dist directory:"
+          ls -la dist
           
       - name: Create DMG
         run: |
           mkdir -p dist/dmg
           cp -r "dist/TablaRaza.app" dist/dmg/
           hdiutil create -volname "TablaRaza" -srcfolder dist/dmg -ov -format UDZO dist/TablaRaza-MacOS.dmg
+          echo "Contents of dist directory after DMG creation:"
+          ls -la dist
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TablaRaza-MacOS
           path: dist/TablaRaza-MacOS.dmg
-          
-      - name: Upload to release
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/TablaRaza-MacOS.dmg
-          asset_name: TablaRaza-MacOS.dmg
-          asset_content_type: application/octet-stream
 
   build-linux:
     runs-on: ubuntu-latest
@@ -108,26 +100,81 @@ jobs:
           pip install pyinstaller pillow psutil
           sudo apt-get update
           sudo apt-get install -y python3-tk python3-dev
-          pip install -r requirements.txt
-        continue-on-error: true
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       
       - name: Build executable
         run: |
           pyinstaller --onefile --name=TablaRaza main.py
+          
+      - name: Debug - List directory contents
+        run: |
+          echo "Contents of current directory:"
+          ls -la
+          echo "Contents of dist directory:"
+          ls -la dist
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TablaRaza-Linux
           path: dist/TablaRaza
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        
+      - name: Display structure of downloaded files
+        run: |
+          echo "Contents of workspace:"
+          ls -la
+          echo "Detailed directory structure:"
+          find . -type f | sort
+        
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          # Copy with explicit paths to ensure they exist
+          if [ -f TablaRaza-Windows/TablaRaza.exe ]; then
+            cp TablaRaza-Windows/TablaRaza.exe release-files/TablaRaza-Windows.exe
+          else
+            echo "WARNING: Windows executable not found"
+          fi
           
-      - name: Upload to release
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [ -f TablaRaza-MacOS/TablaRaza-MacOS.dmg ]; then
+            cp TablaRaza-MacOS/TablaRaza-MacOS.dmg release-files/TablaRaza-MacOS.dmg
+          else
+            echo "WARNING: macOS DMG not found"
+          fi
+          
+          if [ -f TablaRaza-Linux/TablaRaza ]; then
+            cp TablaRaza-Linux/TablaRaza release-files/TablaRaza-Linux
+          else
+            echo "WARNING: Linux executable not found"
+          fi
+          
+          echo "Contents of release-files directory:"
+          ls -la release-files
+        
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/TablaRaza
-          asset_name: TablaRaza-Linux
-          asset_content_type: application/octet-stream
+          files: release-files/*
+          draft: false
+          prerelease: false
+          
+      - name: Create Release (from manual trigger)
+        id: create_manual_release
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/')
+        with:
+          tag_name: v${{ github.run_number }}.0.0
+          name: Release v${{ github.run_number }}.0.0
+          files: release-files/*
+          draft: false
+          prerelease: false
