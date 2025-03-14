@@ -72,6 +72,16 @@ pyinstaller --onefile --windowed --icon=resources/icon.icns --name=TablaRaza mai
 pyinstaller --onefile --name=TablaRaza main.py
 ```
 
+## To-Do / Work in progress
+- [x] Make cross-platform
+- [x] Runs on windows without requiring admin
+- [ ] Runs on Mac OS X without requiring admin
+- [ ] Runs on Linux without requiring admin
+- [ ] Need developer signature for Mac installer ($99 / Year for license)
+- [ ] Project will need funding for full Mac support
+
+
+
 ## License
 
 [MIT](LICENSE)
