@@ -27,6 +27,16 @@ jobs:
           pip install -r requirements.txt
         continue-on-error: true
       
+      - name: Create icon directory
+        run: |
+          mkdir -p resources
+          # Create a placeholder icon if needed
+          if (-not (Test-Path "resources\icon.ico")) {
+            echo "Creating placeholder icon..."
+            pip install Pillow
+            python -c "from PIL import Image, ImageDraw; img = Image.new('RGB', (256, 256), color='#2563eb'); draw = ImageDraw.Draw(img); img.save('resources/icon.ico')"
+          }
+      
       - name: Build executable
         run: |
           pyinstaller --onefile --windowed --icon=resources/icon.ico --name=TablaRaza main.py
@@ -39,13 +49,10 @@ jobs:
           
       - name: Upload to release
         if: github.event_name == 'release'
-        uses: svenstaro/upload-release-action@v2
+        uses: softprops/action-gh-release@v1
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/TablaRaza.exe
-          asset_name: TablaRaza-Windows.exe
-          tag: ${{ github.ref }}
-          overwrite: true
+          files: dist/TablaRaza.exe
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
     runs-on: macos-latest
@@ -63,9 +70,65 @@ jobs:
           pip install pyinstaller pillow psutil
           pip install -r requirements.txt
         continue-on-error: true
+    
+      - name: Create ICNS from PNG
+        run: |
+          mkdir -p resources
+          
+          # If icon.png exists, convert it to icns
+          if [ -f "resources/icon.png" ]; then
+            echo "Converting PNG to ICNS..."
+            ICONSET="resources/icon.iconset"
+            mkdir -p "$ICONSET"
+            
+            # Generate different sizes
+            sips -z 16 16 resources/icon.png --out "$ICONSET/icon_16x16.png"
+            sips -z 32 32 resources/icon.png --out "$ICONSET/icon_16x16@2x.png"
+            sips -z 32 32 resources/icon.png --out "$ICONSET/icon_32x32.png"
+            sips -z 64 64 resources/icon.png --out "$ICONSET/icon_32x32@2x.png"
+            sips -z 128 128 resources/icon.png --out "$ICONSET/icon_128x128.png"
+            sips -z 256 256 resources/icon.png --out "$ICONSET/icon_128x128@2x.png"
+            sips -z 256 256 resources/icon.png --out "$ICONSET/icon_256x256.png"
+            sips -z 512 512 resources/icon.png --out "$ICONSET/icon_256x256@2x.png"
+            sips -z 512 512 resources/icon.png --out "$ICONSET/icon_512x512.png"
+            sips -z 1024 1024 resources/icon.png --out "$ICONSET/icon_512x512@2x.png"
+            
+            # Create icns
+            iconutil -c icns "$ICONSET"
+            mv icon.icns resources/icon.icns
+            
+            # Clean up
+            rm -rf "$ICONSET"
+          else
+            echo "No icon.png found. Creating a default icon..."
+            # Create a simple placeholder icon - a blue square
+            mkdir -p resources/icon.iconset
+            python -c "from PIL import Image, ImageDraw; img = Image.new('RGB', (1024, 1024), color='#2563eb'); draw = ImageDraw.Draw(img); img.save('resources/icon.png')"
+            
+            # Then generate the iconset
+            ICONSET="resources/icon.iconset"
+            sips -z 16 16 resources/icon.png --out "$ICONSET/icon_16x16.png"
+            sips -z 32 32 resources/icon.png --out "$ICONSET/icon_16x16@2x.png"
+            sips -z 32 32 resources/icon.png --out "$ICONSET/icon_32x32.png"
+            sips -z 64 64 resources/icon.png --out "$ICONSET/icon_32x32@2x.png"
+            sips -z 128 128 resources/icon.png --out "$ICONSET/icon_128x128.png"
+            sips -z 256 256 resources/icon.png --out "$ICONSET/icon_128x128@2x.png"
+            sips -z 256 256 resources/icon.png --out "$ICONSET/icon_256x256.png"
+            sips -z 512 512 resources/icon.png --out "$ICONSET/icon_256x256@2x.png"
+            sips -z 512 512 resources/icon.png --out "$ICONSET/icon_512x512.png"
+            sips -z 1024 1024 resources/icon.png --out "$ICONSET/icon_512x512@2x.png"
+            
+            # Create icns
+            iconutil -c icns "$ICONSET"
+            mv icon.icns resources/icon.icns
+            
+            # Clean up
+            rm -rf "$ICONSET"
+          fi
       
       - name: Build executable
         run: |
+          ls -la resources/
           pyinstaller --onefile --windowed --icon=resources/icon.icns --name=TablaRaza main.py
           
       - name: Create DMG
@@ -82,13 +145,10 @@ jobs:
           
       - name: Upload to release
         if: github.event_name == 'release'
-        uses: svenstaro/upload-release-action@v2
+        uses: softprops/action-gh-release@v1
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/TablaRaza-MacOS.dmg
-          asset_name: TablaRaza-MacOS.dmg
-          tag: ${{ github.ref }}
-          overwrite: true
+          files: dist/TablaRaza-MacOS.dmg
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-linux:
     runs-on: ubuntu-latest
@@ -109,6 +169,16 @@ jobs:
           pip install -r requirements.txt
         continue-on-error: true
       
+      - name: Create icon directory
+        run: |
+          mkdir -p resources
+          # Create a placeholder icon if needed
+          if [ ! -f "resources/icon.png" ]; then
+            echo "Creating placeholder icon..."
+            pip install Pillow
+            python -c "from PIL import Image, ImageDraw; img = Image.new('RGB', (256, 256), color='#2563eb'); draw = ImageDraw.Draw(img); img.save('resources/icon.png')"
+          fi
+      
       - name: Build executable
         run: |
           pyinstaller --onefile --name=TablaRaza main.py
@@ -121,10 +191,7 @@ jobs:
           
       - name: Upload to release
         if: github.event_name == 'release'
-        uses: svenstaro/upload-release-action@v2
+        uses: softprops/action-gh-release@v1
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/TablaRaza
-          asset_name: TablaRaza-Linux
-          tag: ${{ github.ref }}
-          overwrite: true
+          files: dist/TablaRaza
+          token: ${{ secrets.GITHUB_TOKEN }}
