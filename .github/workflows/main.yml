@@ -33,7 +33,7 @@ jobs:
       
       - name: Build executable
         run: |
-          pyinstaller --onefile --windowed --name=TablaRaza main.py
+          pyinstaller --onefile --windowed --icon=resources/icon.ico --name=TablaRaza main.py
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -59,7 +59,7 @@ jobs:
       
       - name: Build executable
         run: |
-          pyinstaller --onefile --windowed --name=TablaRaza main.py
+          pyinstaller --onefile --windowed --icon=resources/icon.icns --name=TablaRaza main.py
           
       - name: Create DMG
         run: |
@@ -93,7 +93,7 @@ jobs:
       
       - name: Build executable
         run: |
-          pyinstaller --onefile --name=TablaRaza main.py
+          pyinstaller --onefile --icon=resources/icon.png --name=TablaRaza main.py
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
