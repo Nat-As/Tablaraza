@@ -2,7 +2,7 @@
 """
 Created on Wed Mar 12 15:15:39 2025
 
-@author: james.andrews
+@author: Nat-As
 """
 
 import os
@@ -38,6 +38,9 @@ class ISOFlasher(tk.Tk):
         self.format_device = tk.BooleanVar(value=True)
         self.progress_var = tk.DoubleVar()
         self.status_var = tk.StringVar(value="Ready to flash")
+        
+        # Store sudo password for macOS
+        self.sudo_password = None
         
         self.create_widgets()
         self.update_device_list()
@@ -444,8 +447,8 @@ class ISOFlasher(tk.Tk):
                 )
                 
                 # Then use dd to write the ISO
-                process = subprocess.Popen(
-                    ["sudo", "dd", f"if={iso_path}", f"of={device_path}", "bs=4m"],
+                process = self.run_with_sudo(
+                    ["dd", f"if={iso_path}", f"of={device_path}", "bs=4m"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE
                 )
@@ -470,7 +473,10 @@ class ISOFlasher(tk.Tk):
             self.update_status("Finalizing and syncing...", 95)
             
             if platform.system() in ["Linux", "Darwin"]:
-                subprocess.run(["sync"], check=True)
+                if platform.system() == "Darwin":
+                    self.run_with_sudo(["sync"], check=True)
+                else:
+                    subprocess.run(["sync"], check=True)
             
             # 4. Complete
             self.update_status("Flash completed successfully!", 100)
@@ -493,21 +499,68 @@ class ISOFlasher(tk.Tk):
         self.device_combo.configure(state="readonly")
         self.iso_entry.configure(state="normal")
 
+    def get_sudo_password(self):
+        """Request sudo password using OSA script dialog on macOS"""
+        if platform.system() != "Darwin" or self.sudo_password:
+            return True
+            
+        try:
+            # Create AppleScript to show password dialog
+            script = '''
+            tell application "System Events"
+                display dialog "Administrator privileges are required to flash the device." & return & return & "Please enter your password:" with title "ISO Flasher" default answer "" with hidden answer buttons {"Cancel", "OK"} default button "OK" with icon caution
+                if button returned of result is "OK" then
+                    return text returned of result
+                else
+                    return ""
+                end if
+            end tell
+            '''
+            
+            # Run AppleScript and get the password
+            proc = subprocess.run(['osascript', '-e', script], 
+                                capture_output=True, 
+                                text=True)
+            
+            if proc.returncode == 0 and proc.stdout.strip():
+                self.sudo_password = proc.stdout.strip()
+                return True
+            return False
+            
+        except Exception as e:
+            messagebox.showerror("Error", 
+                               "Failed to get administrator privileges.\n\n" + str(e))
+            return False
+
+    def run_with_sudo(self, cmd, **kwargs):
+        """Run a command with sudo on macOS, using stored password"""
+        if platform.system() != "Darwin":
+            return subprocess.run(cmd, **kwargs)
+            
+        if not self.sudo_password and not self.get_sudo_password():
+            raise Exception("Administrator privileges required")
+            
+        sudo_cmd = ['sudo', '-S'] + cmd
+        kwargs['input'] = self.sudo_password + '\n'
+        kwargs['text'] = True
+        return subprocess.run(sudo_cmd, **kwargs)
+
 if __name__ == "__main__":
-    # Check for admin/root privileges
+    # Check for admin/root privileges on Linux only
     def is_admin():
         try:
             if platform.system() == "Windows":
                 import ctypes
                 return ctypes.windll.shell32.IsUserAnAdmin() != 0
-            else:
+            elif platform.system() == "Linux":
                 return os.geteuid() == 0
+            return True
         except:
             return False
     
-    if not is_admin() and platform.system() != "Windows":  # Windows will prompt for elevation when needed
+    if platform.system() == "Linux" and not is_admin():
         print("This program requires administrator privileges to write to devices.")
-        print("Please run it with sudo (Linux) or as administrator (Windows).")
+        print("Please run it with sudo.")
         sys.exit(1)
     
     app = ISOFlasher()
