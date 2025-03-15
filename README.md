@@ -26,7 +26,7 @@ Pre-built executables are available for download:
 
 ![screenshot](doc/screenshot.png)
 
-**Note:** On Linux and macOS, you may need to run the application with sudo/admin privileges.
+**Note:** On Linux you may need to run the application with sudo/admin privileges.
 
 ## Building from Source
 
@@ -77,8 +77,19 @@ pyinstaller --onefile --name=TablaRaza main.py
 - [x] Runs on windows without requiring admin
 - [ ] Runs on Mac OS X without requiring admin
 - [ ] Runs on Linux without requiring admin
-- [ ] Need developer signature for Mac installer ($99 / Year for license)
-- [ ] Project will need funding for full Mac support
+
+## Mac Users
+
+Because the software is unsigned, you will have to follow the following steps for installation:
+
+1. Download and open the [.dmg file](https://github.com/Nat-As/Tablaraza/releases/latest/download/TablaRaza-MacOS.dmg)
+2. Copy the application into the applications folder
+3. Run the program
+4. If an untrusted message pops up, you will have to manually enable running the program in ```System settings >> Privacy and Security >> Allow application (At the bottom)```
+
+![screenshot](doc/macbypass.png)
+
+To make this program run without this, it would have to be signed by an apple developer with a license that costs $99 / Year. Since this is FOSS software, I didn't feel like doing that. Enjoy :)
 
 
 
