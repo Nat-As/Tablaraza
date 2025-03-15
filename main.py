@@ -19,7 +19,7 @@ class ISOFlasher(tk.Tk):
     def __init__(self):
         super().__init__()
         
-        self.title("ISO Flasher")
+        self.title("Tablaraza")
         self.geometry("800x600")
         self.minsize(700, 500)
         
@@ -458,16 +458,31 @@ class ISOFlasher(tk.Tk):
                 start_time = time.time()
                 iso_size = os.path.getsize(iso_path)
                 
-                while process.poll() is None:
-                    # Estimate progress based on elapsed time (not accurate but provides feedback)
-                    elapsed = time.time() - start_time
-                    estimated_progress = min(85, int(elapsed / (iso_size / (4 * 1024 * 1024) * 0.5) * 100))
-                    self.update_status(f"Flashing in progress... (estimate: {estimated_progress}%)", estimated_progress)
-                    time.sleep(1)
-                
-                if process.returncode != 0:
-                    stderr = process.stderr.read().decode('utf-8')
-                    raise Exception(f"dd command failed: {stderr}")
+                try:
+                    while True:
+                        # Check if process has completed
+                        if isinstance(process, subprocess.CompletedProcess):
+                            if process.returncode != 0:
+                                stderr = process.stderr.read().decode('utf-8') if process.stderr else "Unknown error"
+                                raise Exception(f"dd command failed: {stderr}")
+                            break
+                        
+                        # For running process, check status
+                        if hasattr(process, 'poll'):
+                            status = process.poll()
+                            if status is not None:  # Process has completed
+                                if status != 0:
+                                    stderr = process.stderr.read().decode('utf-8') if process.stderr else "Unknown error"
+                                    raise Exception(f"dd command failed: {stderr}")
+                                break
+                        
+                        # Update progress
+                        elapsed = time.time() - start_time
+                        estimated_progress = min(85, int(elapsed / (iso_size / (4 * 1024 * 1024) * 0.5) * 100))
+                        self.update_status(f"Flashing in progress... (estimate: {estimated_progress}%)", estimated_progress)
+                        time.sleep(1)
+                except Exception as e:
+                    raise Exception(f"Error during dd process: {str(e)}")
             
             # 3. Finalize and sync
             self.update_status("Finalizing and syncing...", 95)
