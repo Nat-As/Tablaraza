@@ -1,6 +1,8 @@
 # TablaRaza - ISO Flasher
 ![Build Status](https://github.com/Nat-As/Tablaraza/actions/workflows/main.yml/badge.svg)
-
+![Version](https://img.shields.io/github/v/release/Nat-As/Tablaraza)
+![License](https://img.shields.io/github/license/Nat-As/Tablaraza)
+![Downloads](https://img.shields.io/github/downloads/Nat-As/Tablaraza/total)
 <br>
 
 TablaRaza is a cross-platform GUI application for flashing ISO images to USB drives and SD cards. This tool provides a simple and intuitive interface for creating bootable media. Does not require admin privileges on Windows!
