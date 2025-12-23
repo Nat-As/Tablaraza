@@ -1,582 +1,708 @@
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 """
-Created on Wed Mar 12 15:15:39 2025
-
-@author: Nat-As
+TablaRaza - Enhanced ISO/IMG Flasher
+A cross-platform GUI application for flashing ISO and IMG files to USB drives
 """
 
-import os
 import sys
+import os
 import platform
-import threading
 import subprocess
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
-import psutil
+import threading
+from pathlib import Path
 
-class ISOFlasher(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        
-        self.title("Tablaraza")
-        self.geometry("800x600")
-        self.minsize(700, 500)
-        
-        # Set theme colors
-        self.primary_color = "#2563eb"  # Blue
-        self.secondary_color = "#f3f4f6"  # Light gray
-        self.background_color = "#ffffff"  # White
-        self.text_color = "#1f2937"  # Dark gray
-        self.success_color = "#10b981"  # Green
-        self.error_color = "#ef4444"  # Red
-        
-        self.configure(bg=self.background_color)
-        
-        self.iso_path = tk.StringVar()
-        self.selected_device = tk.StringVar()
-        self.format_device = tk.BooleanVar(value=True)
-        self.progress_var = tk.DoubleVar()
-        self.status_var = tk.StringVar(value="Ready to flash")
-        
-        # Store sudo password for macOS
-        self.sudo_password = None
-        
-        self.create_widgets()
-        self.update_device_list()
+# GUI imports
+try:
+    from tkinter import (
+        Tk, Frame, Label, Button, Entry, StringVar, 
+        messagebox, filedialog, ttk, Canvas, PhotoImage
+    )
+    from tkinter.font import Font
+except ImportError:
+    print("Error: tkinter not found. Please install python3-tk")
+    sys.exit(1)
+
+
+class DeviceManager:
+    """Cross-platform device detection and management"""
     
-    def create_widgets(self):
-        # Create a frame for the main content
-        main_frame = tk.Frame(self, bg=self.background_color, padx=20, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+    @staticmethod
+    def get_devices():
+        """Get list of available storage devices"""
+        system = platform.system()
         
-        # App title
-        title_frame = tk.Frame(main_frame, bg=self.background_color)
-        title_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        title_label = tk.Label(
-            title_frame, 
-            text="ISO Flasher", 
-            font=("Helvetica", 24, "bold"), 
-            fg=self.primary_color,
-            bg=self.background_color
-        )
-        title_label.pack(side=tk.LEFT)
-        
-        subtitle_label = tk.Label(
-            title_frame, 
-            text="Flash ISO images to SD cards and USB drives", 
-            font=("Helvetica", 12), 
-            fg=self.text_color,
-            bg=self.background_color
-        )
-        subtitle_label.pack(side=tk.LEFT, padx=(10, 0), pady=(10, 0))
-        
-        # File selection section
-        file_frame = tk.LabelFrame(
-            main_frame, 
-            text="Select ISO File", 
-            font=("Helvetica", 12, "bold"),
-            fg=self.text_color,
-            bg=self.background_color,
-            padx=10,
-            pady=10
-        )
-        file_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        self.iso_entry = tk.Entry(
-            file_frame, 
-            textvariable=self.iso_path,
-            font=("Helvetica", 10),
-            width=50,
-            bg=self.secondary_color,
-            fg=self.text_color
-        )
-        self.iso_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
-        
-        browse_button = ttk.Button(
-            file_frame, 
-            text="Browse", 
-            command=self.browse_iso,
-            style="TButton"
-        )
-        browse_button.pack(side=tk.RIGHT)
-        
-        # Device selection section
-        device_frame = tk.LabelFrame(
-            main_frame, 
-            text="Select Target Device", 
-            font=("Helvetica", 12, "bold"),
-            fg=self.text_color,
-            bg=self.background_color,
-            padx=10,
-            pady=10
-        )
-        device_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        self.device_combo = ttk.Combobox(
-            device_frame, 
-            textvariable=self.selected_device,
-            font=("Helvetica", 10),
-            state="readonly"
-        )
-        self.device_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
-        
-        refresh_button = ttk.Button(
-            device_frame, 
-            text="Refresh", 
-            command=self.update_device_list
-        )
-        refresh_button.pack(side=tk.RIGHT)
-        
-        # Format option
-        format_frame = tk.Frame(main_frame, bg=self.background_color, pady=5)
-        format_frame.pack(fill=tk.X)
-        
-        format_check = ttk.Checkbutton(
-            format_frame, 
-            text="Format device before flashing (recommended)", 
-            variable=self.format_device
-        )
-        format_check.pack(anchor=tk.W)
-        
-        # Warning
-        warning_frame = tk.Frame(main_frame, bg="#ffedd5", padx=10, pady=10)  # Light orange bg
-        warning_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        warning_label = tk.Label(
-            warning_frame, 
-            text="Warning: All data on the selected device will be erased during the flash process!", 
-            fg="#9a3412",  # Dark orange text
-            bg="#ffedd5",
-            font=("Helvetica", 10, "bold"),
-            wraplength=700
-        )
-        warning_label.pack()
-        
-        # Progress section
-        progress_frame = tk.Frame(main_frame, bg=self.background_color)
-        progress_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        self.progress_bar = ttk.Progressbar(
-            progress_frame, 
-            variable=self.progress_var, 
-            mode="determinate",
-            length=100
-        )
-        self.progress_bar.pack(fill=tk.X, pady=(0, 5))
-        
-        status_label = tk.Label(
-            progress_frame, 
-            textvariable=self.status_var,
-            fg=self.text_color,
-            bg=self.background_color
-        )
-        status_label.pack(anchor=tk.W)
-        
-        # Buttons
-        button_frame = tk.Frame(main_frame, bg=self.background_color)
-        button_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        self.flash_button = ttk.Button(
-            button_frame, 
-            text="Flash ISO", 
-            command=self.flash_iso,
-            style="Accent.TButton"
-        )
-        self.flash_button.pack(side=tk.RIGHT)
-        
-        cancel_button = ttk.Button(
-            button_frame, 
-            text="Exit", 
-            command=self.cancel
-        )
-        cancel_button.pack(side=tk.RIGHT, padx=(0, 10))
-        
-        # Configure styles
-        self.style = ttk.Style()
-        self.style.configure("TButton", font=("Helvetica", 10))
-        self.style.configure("Accent.TButton", font=("Helvetica", 10, "bold"))
-        self.style.map("Accent.TButton",
-                  foreground=[('pressed', self.background_color), ('active', self.background_color)],
-                  background=[('pressed', '!disabled', self.primary_color), ('active', self.primary_color)]
-                  )
+        if system == "Windows":
+            return DeviceManager._get_windows_devices()
+        elif system == "Darwin":  # macOS
+            return DeviceManager._get_macos_devices()
+        elif system == "Linux":
+            return DeviceManager._get_linux_devices()
+        else:
+            return []
     
-    def browse_iso(self):
-        file_path = filedialog.askopenfilename(
-            title="Select ISO File",
-            filetypes=(("ISO files", "*.iso"), ("All files", "*.*"))
-        )
-        if file_path:
-            self.iso_path.set(file_path)
+    @staticmethod
+    def _get_windows_devices():
+        """Get Windows removable drives"""
+        import string
+        import ctypes
+        
+        devices = []
+        drives = []
+        
+        # Get all drive letters
+        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        for letter in string.ascii_uppercase:
+            if bitmask & 1:
+                drives.append(letter)
+            bitmask >>= 1
+        
+        # Filter for removable drives
+        for drive in drives:
+            drive_path = f"{drive}:\\"
+            drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive_path)
+            
+            # 2 = DRIVE_REMOVABLE
+            if drive_type == 2:
+                try:
+                    # Get drive size
+                    free_bytes = ctypes.c_ulonglong(0)
+                    total_bytes = ctypes.c_ulonglong(0)
+                    ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+                        drive_path,
+                        None,
+                        ctypes.pointer(total_bytes),
+                        ctypes.pointer(free_bytes)
+                    )
+                    
+                    size_gb = total_bytes.value / (1024**3)
+                    devices.append({
+                        'path': drive_path,
+                        'name': f"{drive}: ({size_gb:.1f} GB)",
+                        'size': total_bytes.value
+                    })
+                except:
+                    pass
+        
+        return devices
     
-    def update_device_list(self):
+    @staticmethod
+    def _get_macos_devices():
+        """Get macOS removable volumes"""
         devices = []
         
-        if platform.system() == "Windows":
-            # Get drives with Win32_DiskDrive
-            try:
-                # For Windows, list logical drives
-                import win32api
-                drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]
-                for drive in drives:
-                    if drive.startswith('C:') or drive.startswith('S:'):  # Skip
-                        continue
-                    try:
-                        info = psutil.disk_usage(drive)
-                        size_gb = info.total / (1024**3)
-                        device_name = f"{drive} ({size_gb:.1f} GB)"
-                        devices.append((device_name, drive))
-                    except:
-                        pass
-            except:
-                messagebox.showwarning("Warning", "Could not retrieve device information on Windows.")
-        
-        elif platform.system() == "Linux":
-            # For Linux, use lsblk to get block devices
-            try:
-                output = subprocess.check_output(["lsblk", "-d", "-o", "NAME,SIZE,MODEL,TRAN", "-n"]).decode("utf-8")
-                for line in output.splitlines():
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        device_name = parts[0]
-                        size = parts[1]
-                        model = " ".join(parts[2:-1]) if len(parts) > 3 else ""
-                        transport = parts[-1] if len(parts) > 2 else ""
-                        
-                        # Only include removable devices (not internal hard drives)
-                        if (transport == "usb" or (
-                                device_name.startswith(("sd", "mmcblk")) and not device_name.startswith("sda"))):
-                            full_path = f"/dev/{device_name}"
-                            display_name = f"{full_path} ({size}{', ' + model if model else ''})"
-                            devices.append((display_name, full_path))
-            except:
-                messagebox.showwarning("Warning", "Could not retrieve device information on Linux.")
-        
-        elif platform.system() == "Darwin":  # macOS
-            try:
-                # For macOS, use diskutil list
-                output = subprocess.check_output(["diskutil", "list", "external"], universal_newlines=True)
-                current_disk = None
+        try:
+            # Use diskutil to list external disks
+            result = subprocess.run(
+                ['diskutil', 'list', '-plist', 'external'],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                # Parse diskutil output
+                import plistlib
+                plist = plistlib.loads(result.stdout.encode())
                 
-                for line in output.splitlines():
-                    if line.startswith("/dev/"):
-                        current_disk = line.split()[0]
-                        # Get disk info
-                        try:
-                            info = subprocess.check_output(["diskutil", "info", current_disk], universal_newlines=True)
-                            size = ""
-                            name = ""
-                            
-                            for info_line in info.splitlines():
-                                if "Disk Size" in info_line:
-                                    size = info_line.split(":", 1)[1].strip()
-                                if "Volume Name" in info_line:
-                                    name = info_line.split(":", 1)[1].strip()
-                            
-                            display_name = f"{current_disk} ({size}{', ' + name if name else ''})"
-                            devices.append((display_name, current_disk))
-                        except:
-                            pass
-            except:
-                messagebox.showwarning("Warning", "Could not retrieve device information on macOS.")
+                for disk in plist.get('AllDisksAndPartitions', []):
+                    disk_id = disk.get('DeviceIdentifier', '')
+                    
+                    # Get disk info
+                    info_result = subprocess.run(
+                        ['diskutil', 'info', '-plist', disk_id],
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if info_result.returncode == 0:
+                        info = plistlib.loads(info_result.stdout.encode())
+                        size = info.get('TotalSize', 0)
+                        size_gb = size / (1024**3)
+                        
+                        name = info.get('VolumeName', disk_id)
+                        
+                        devices.append({
+                            'path': f"/dev/{disk_id}",
+                            'name': f"{name} - /dev/{disk_id} ({size_gb:.1f} GB)",
+                            'size': size
+                        })
+        except Exception as e:
+            print(f"Error detecting macOS devices: {e}")
         
-        # Update combobox with device list
-        if devices:
-            print(devices)
-            self.device_combo['values'] = [name for name, _ in devices]
-            self.device_paths = {name: path for name, path in devices}
-            self.device_combo.current(0)
-        else:
-            self.device_combo['values'] = ["No removable devices found"]
-            self.device_paths = {}
-            self.device_combo.current(0)
+        return devices
     
-    def get_device_path(self):
-        selected = self.selected_device.get()
-        return self.device_paths.get(selected, "")
+    @staticmethod
+    def _get_linux_devices():
+        """Get Linux block devices"""
+        devices = []
+        
+        try:
+            # Use lsblk to list block devices
+            result = subprocess.run(
+                ['lsblk', '-b', '-n', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT', '-e', '7,11'],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        name, size, dev_type = parts[0], parts[1], parts[2]
+                        
+                        # Only show disk devices (not partitions)
+                        if dev_type == 'disk' and not name.startswith('loop'):
+                            try:
+                                size_bytes = int(size)
+                                size_gb = size_bytes / (1024**3)
+                                
+                                devices.append({
+                                    'path': f"/dev/{name}",
+                                    'name': f"/dev/{name} ({size_gb:.1f} GB)",
+                                    'size': size_bytes
+                                })
+                            except ValueError:
+                                pass
+        except Exception as e:
+            print(f"Error detecting Linux devices: {e}")
+        
+        return devices
+
+
+class FlashManager:
+    """Handle the actual flashing process"""
     
-    def cancel(self):
-        sys.exit()
+    @staticmethod
+    def flash_image(image_path, device_path, progress_callback=None):
+        """Flash image to device"""
+        system = platform.system()
+        
+        try:
+            if system == "Windows":
+                return FlashManager._flash_windows(image_path, device_path, progress_callback)
+            elif system == "Darwin":
+                return FlashManager._flash_macos(image_path, device_path, progress_callback)
+            elif system == "Linux":
+                return FlashManager._flash_linux(image_path, device_path, progress_callback)
+            else:
+                raise Exception(f"Unsupported platform: {system}")
+        except Exception as e:
+            raise Exception(f"Flash error: {str(e)}")
     
-    def flash_iso(self):
-        iso_path = self.iso_path.get()
-        device_path = self.get_device_path()
+    @staticmethod
+    def _flash_windows(image_path, device_path, progress_callback):
+        """Flash on Windows using direct disk write"""
+        import ctypes
         
-        if not iso_path:
-            messagebox.showerror("Error", "Please select an ISO file.")
-            return
+        if progress_callback:
+            progress_callback("Preparing to flash...")
         
-        if not device_path:
-            messagebox.showerror("Error", "Please select a valid target device.")
-            return
+        # Extract drive letter
+        drive_letter = device_path[0]
         
-        if not os.path.exists(iso_path):
-            messagebox.showerror("Error", "The selected ISO file does not exist.")
-            return
+        # Get physical drive number
+        drive_number = FlashManager._get_physical_drive_number(drive_letter)
+        if drive_number is None:
+            raise Exception("Could not determine physical drive number")
         
-        # Confirm flashing
-        confirmation = messagebox.askokcancel(
-            "Confirm Flashing", 
-            f"You are about to flash:\n\n"
-            f"ISO: {iso_path}\n"
-            f"To Device: {device_path}\n\n"
-            f"This will ERASE ALL DATA on the selected device!\n\n"
-            f"Do you want to continue?"
+        physical_drive = f"\\\\.\\PhysicalDrive{drive_number}"
+        
+        if progress_callback:
+            progress_callback(f"Flashing to {physical_drive}...")
+        
+        # Open physical drive for writing
+        GENERIC_WRITE = 0x40000000
+        OPEN_EXISTING = 3
+        
+        handle = ctypes.windll.kernel32.CreateFileW(
+            physical_drive,
+            GENERIC_WRITE,
+            0,
+            None,
+            OPEN_EXISTING,
+            0,
+            None
         )
         
-        if not confirmation:
-            return
+        if handle == -1:
+            raise Exception("Failed to open device. Try running as administrator.")
         
-        # Disable controls during flashing
-        self.flash_button.configure(state="disabled")
-        self.device_combo.configure(state="disabled")
-        self.iso_entry.configure(state="disabled")
-        
-        # Reset progress
-        self.progress_var.set(0)
-        self.status_var.set("Preparing...")
-        
-        # Start flashing in a separate thread
-        thread = threading.Thread(target=self.flash_process, args=(iso_path, device_path))
-        thread.daemon = True
-        thread.start()
-    
-    def flash_process(self, iso_path, device_path):
         try:
-            # 1. Format device if requested
-            if self.format_device.get():
-                self.update_status("Formatting device...", 10)
-                
-                if platform.system() == "Windows":
-                    # On Windows, use format command
-                    drive_letter = device_path.split(':')[0] + ':'
-                    subprocess.run(
-                        f"format {drive_letter} /fs:NTFS /q /y", 
-                        shell=True, 
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
-                    )
-                elif platform.system() == "Linux":
-                    # On Linux, use mkfs.ntfs
-                    subprocess.run(
-                        ["sudo", "mkfs.ntfs", "-f", device_path], 
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
-                    )
-                elif platform.system() == "Darwin":  # macOS
-                    # On macOS, use diskutil
-                    subprocess.run(
-                        ["diskutil", "eraseDisk", "MS-DOS", "FLASHDRIVE", device_path], 
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
-                    )
-                
-                self.update_status("Formatting complete", 20)
+            # Read and write image
+            chunk_size = 1024 * 1024  # 1MB chunks
+            bytes_written = 0
             
-            # 2. Flash ISO to device
-            self.update_status("Flashing ISO to device...", 25)
-            
-            # The actual flashing process varies by platform
-            if platform.system() == "Windows":
-                # On Windows, use dd for Windows if available, otherwise use a straight file copy
-                try:
-                    subprocess.run(
-                        f"dd if=\"{iso_path}\" of=\\\\.\\{device_path} bs=4M status=progress",
-                        shell=True,
-                        check=True
-                    )
-                except:
-                    # Fallback to PowerShell method
-                    ps_cmd = f'$source = [System.IO.File]::OpenRead("{iso_path}"); '
-                    drive_letter = device_path.rstrip('\\')
-                    ps_cmd += f'$dest = [System.IO.File]::OpenWrite("\\\\.\\{drive_letter}"); '
-                    ps_cmd += '$buffer = New-Object byte[] 4MB; '
-                    ps_cmd += '$total = $source.Length; '
-                    ps_cmd += '$count = 0; '
-                    ps_cmd += 'while(($read = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {'
-                    ps_cmd += '$dest.Write($buffer, 0, $read); '
-                    ps_cmd += '$count += $read; '
-                    ps_cmd += 'Write-Progress -Activity "Copying ISO" -Status "Progress:" -PercentComplete ($count/$total*100); '
-                    ps_cmd += '}'
-                    ps_cmd += '$source.Close(); $dest.Close();'
+            with open(image_path, 'rb') as img:
+                file_size = os.path.getsize(image_path)
+                
+                while True:
+                    chunk = img.read(chunk_size)
+                    if not chunk:
+                        break
                     
-                    print("Running powershell command:")
-                    print(ps_cmd)
-                    subprocess.run(
-                        ["powershell", "-Command", ps_cmd],
-                        check=True
+                    bytes_to_write = len(chunk)
+                    written = ctypes.c_ulong(0)
+                    
+                    success = ctypes.windll.kernel32.WriteFile(
+                        handle,
+                        chunk,
+                        bytes_to_write,
+                        ctypes.byref(written),
+                        None
                     )
-            
-            elif platform.system() == "Linux":
-                # On Linux, use dd command
-                process = subprocess.Popen(
-                    ["sudo", "dd", f"if={iso_path}", f"of={device_path}", "bs=4M", "status=progress"], 
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    universal_newlines=True
-                )
-                
-                # Update progress based on dd output
-                for line in iter(process.stdout.readline, ""):
-                    if "bytes" in line:
-                        try:
-                            # Extract progress information
-                            bytes_copied = int(line.split("bytes")[0].strip())
-                            iso_size = os.path.getsize(iso_path)
-                            progress = min(90, int(bytes_copied / iso_size * 100))
-                            self.update_status(f"Flashing: {progress}% complete", progress)
-                        except:
-                            pass
-                
-                process.wait()
-                if process.returncode != 0:
-                    raise Exception("dd command failed")
-            
-            elif platform.system() == "Darwin":  # macOS
-                # On macOS, use dd command
-                # First, unmount but don't eject the disk
-                subprocess.run(
-                    ["diskutil", "unmountDisk", device_path],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                # Then use dd to write the ISO
-                process = self.run_with_sudo(
-                    ["dd", f"if={iso_path}", f"of={device_path}", "bs=4m"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                # macOS dd doesn't have progress, so we'll update based on time
-                import time
-                start_time = time.time()
-                iso_size = os.path.getsize(iso_path)
-                
-                try:
-                    while True:
-                        # Check if process has completed
-                        if isinstance(process, subprocess.CompletedProcess):
-                            if process.returncode != 0:
-                                stderr = process.stderr.read().decode('utf-8') if process.stderr else "Unknown error"
-                                raise Exception(f"dd command failed: {stderr}")
-                            break
-                        
-                        # For running process, check status
-                        if hasattr(process, 'poll'):
-                            status = process.poll()
-                            if status is not None:  # Process has completed
-                                if status != 0:
-                                    stderr = process.stderr.read().decode('utf-8') if process.stderr else "Unknown error"
-                                    raise Exception(f"dd command failed: {stderr}")
-                                break
-                        
-                        # Update progress
-                        elapsed = time.time() - start_time
-                        estimated_progress = min(85, int(elapsed / (iso_size / (4 * 1024 * 1024) * 0.5) * 100))
-                        self.update_status(f"Flashing in progress... (estimate: {estimated_progress}%)", estimated_progress)
-                        time.sleep(1)
-                except Exception as e:
-                    raise Exception(f"Error during dd process: {str(e)}")
-            
-            # 3. Finalize and sync
-            self.update_status("Finalizing and syncing...", 95)
-            
-            if platform.system() in ["Linux", "Darwin"]:
-                if platform.system() == "Darwin":
-                    self.run_with_sudo(["sync"], check=True)
-                else:
-                    subprocess.run(["sync"], check=True)
-            
-            # 4. Complete
-            self.update_status("Flash completed successfully!", 100)
-            messagebox.showinfo("Success", "ISO has been successfully flashed to the device!")
-            
-        except Exception as e:
-            self.update_status(f"Error: {str(e)}", 0)
-            messagebox.showerror("Error", f"An error occurred during the flashing process:\n\n{str(e)}")
+                    
+                    if not success:
+                        raise Exception("Write failed")
+                    
+                    bytes_written += written.value
+                    
+                    if progress_callback and file_size > 0:
+                        percent = (bytes_written / file_size) * 100
+                        progress_callback(f"Writing: {percent:.1f}%")
         
         finally:
-            # Re-enable controls
-            self.after(0, self.enable_controls)
+            ctypes.windll.kernel32.CloseHandle(handle)
+        
+        if progress_callback:
+            progress_callback("Flash complete!")
+        
+        return True
     
-    def update_status(self, message, progress):
-        self.after(0, lambda: self.status_var.set(message))
-        self.after(0, lambda: self.progress_var.set(progress))
-    
-    def enable_controls(self):
-        self.flash_button.configure(state="normal")
-        self.device_combo.configure(state="readonly")
-        self.iso_entry.configure(state="normal")
-
-    def get_sudo_password(self):
-        """Request sudo password using OSA script dialog on macOS"""
-        if platform.system() != "Darwin" or self.sudo_password:
-            return True
-            
+    @staticmethod
+    def _get_physical_drive_number(drive_letter):
+        """Get Windows physical drive number from drive letter"""
         try:
-            # Create AppleScript to show password dialog
-            script = '''
-            tell application "System Events"
-                display dialog "Administrator privileges are required to flash the device." & return & return & "Please enter your password:" with title "ISO Flasher" default answer "" with hidden answer buttons {"Cancel", "OK"} default button "OK" with icon caution
-                if button returned of result is "OK" then
-                    return text returned of result
-                else
-                    return ""
-                end if
-            end tell
-            '''
+            import wmi
+            c = wmi.WMI()
             
-            # Run AppleScript and get the password
-            proc = subprocess.run(['osascript', '-e', script], 
-                                capture_output=True, 
-                                text=True)
+            for physical_disk in c.Win32_DiskDrive():
+                for partition in physical_disk.associators("Win32_DiskDriveToDiskPartition"):
+                    for logical_disk in partition.associators("Win32_LogicalDiskToPartition"):
+                        if logical_disk.Caption == f"{drive_letter}:":
+                            return physical_disk.Index
+        except:
+            pass
+        
+        return None
+    
+    @staticmethod
+    def _flash_macos(image_path, device_path, progress_callback):
+        """Flash on macOS using dd"""
+        if progress_callback:
+            progress_callback("Unmounting device...")
+        
+        # Unmount the device
+        subprocess.run(['diskutil', 'unmountDisk', device_path], check=False)
+        
+        if progress_callback:
+            progress_callback("Flashing image...")
+        
+        # Use dd to write image
+        # Note: This requires sudo/admin privileges
+        result = subprocess.run(
+            ['sudo', 'dd', f'if={image_path}', f'of={device_path}', 'bs=1m'],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            raise Exception(f"dd failed: {result.stderr}")
+        
+        if progress_callback:
+            progress_callback("Syncing...")
+        
+        subprocess.run(['sync'], check=True)
+        
+        if progress_callback:
+            progress_callback("Flash complete!")
+        
+        return True
+    
+    @staticmethod
+    def _flash_linux(image_path, device_path, progress_callback):
+        """Flash on Linux using dd"""
+        if progress_callback:
+            progress_callback("Unmounting device...")
+        
+        # Unmount any mounted partitions
+        try:
+            result = subprocess.run(['mount'], capture_output=True, text=True)
+            for line in result.stdout.split('\n'):
+                if device_path in line:
+                    mount_point = line.split()[2]
+                    subprocess.run(['sudo', 'umount', mount_point], check=False)
+        except:
+            pass
+        
+        if progress_callback:
+            progress_callback("Flashing image...")
+        
+        # Use dd with status=progress for feedback
+        process = subprocess.Popen(
+            ['sudo', 'dd', f'if={image_path}', f'of={device_path}', 'bs=4M', 'status=progress'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Monitor progress
+        while True:
+            line = process.stderr.readline()
+            if not line and process.poll() is not None:
+                break
             
-            if proc.returncode == 0 and proc.stdout.strip():
-                self.sudo_password = proc.stdout.strip()
-                return True
-            return False
+            if line and progress_callback:
+                progress_callback(f"Writing: {line.strip()}")
+        
+        if process.returncode != 0:
+            raise Exception("dd failed")
+        
+        if progress_callback:
+            progress_callback("Syncing...")
+        
+        subprocess.run(['sync'], check=True)
+        
+        if progress_callback:
+            progress_callback("Flash complete!")
+        
+        return True
+
+
+class TablaRazaGUI:
+    """Main GUI application"""
+    
+    def __init__(self, root):
+        self.root = root
+        self.root.title("TablaRaza - Image Flasher")
+        self.root.geometry("700x500")
+        self.root.resizable(False, False)
+        
+        # Variables
+        self.image_path = StringVar()
+        self.selected_device = StringVar()
+        self.devices = []
+        
+        # Setup UI
+        self._setup_styles()
+        self._create_ui()
+        
+        # Initial device scan
+        self.refresh_devices()
+    
+    def _setup_styles(self):
+        """Configure ttk styles"""
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # Custom colors
+        bg_color = "#2b2b2b"
+        fg_color = "#ffffff"
+        accent_color = "#4a9eff"
+        button_bg = "#3a3a3a"
+        
+        self.root.configure(bg=bg_color)
+        
+        style.configure('TFrame', background=bg_color)
+        style.configure('TLabel', background=bg_color, foreground=fg_color, font=('Segoe UI', 10))
+        style.configure('Title.TLabel', font=('Segoe UI', 18, 'bold'))
+        style.configure('Subtitle.TLabel', font=('Segoe UI', 9), foreground='#aaaaaa')
+        
+        style.configure('TButton', 
+                       background=button_bg, 
+                       foreground=fg_color,
+                       borderwidth=0,
+                       font=('Segoe UI', 10))
+        style.map('TButton',
+                 background=[('active', accent_color)])
+        
+        style.configure('Accent.TButton',
+                       background=accent_color,
+                       foreground=fg_color,
+                       font=('Segoe UI', 11, 'bold'))
+        style.map('Accent.TButton',
+                 background=[('active', '#3a8eef')])
+        
+        style.configure('TCombobox',
+                       fieldbackground=button_bg,
+                       background=button_bg,
+                       foreground=fg_color,
+                       arrowcolor=fg_color)
+    
+    def _create_ui(self):
+        """Create the user interface"""
+        # Main container
+        main_frame = ttk.Frame(self.root, padding=30)
+        main_frame.pack(fill='both', expand=True)
+        
+        # Header
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill='x', pady=(0, 20))
+        
+        title = ttk.Label(header_frame, text="TablaRaza", style='Title.TLabel')
+        title.pack()
+        
+        subtitle = ttk.Label(header_frame, 
+                            text="Flash ISO & IMG files to USB drives and SD cards",
+                            style='Subtitle.TLabel')
+        subtitle.pack()
+        
+        # Image selection section
+        image_frame = ttk.LabelFrame(main_frame, text=" Select Image File ", padding=15)
+        image_frame.pack(fill='x', pady=(0, 15))
+        
+        image_path_frame = ttk.Frame(image_frame)
+        image_path_frame.pack(fill='x')
+        
+        self.image_entry = ttk.Entry(image_path_frame, textvariable=self.image_path, 
+                                     state='readonly', width=50)
+        self.image_entry.pack(side='left', fill='x', expand=True, padx=(0, 10))
+        
+        browse_btn = ttk.Button(image_path_frame, text="Browse...", 
+                               command=self.browse_image)
+        browse_btn.pack(side='left')
+        
+        # Device selection section
+        device_frame = ttk.LabelFrame(main_frame, text=" Select Target Device ", padding=15)
+        device_frame.pack(fill='x', pady=(0, 15))
+        
+        device_select_frame = ttk.Frame(device_frame)
+        device_select_frame.pack(fill='x')
+        
+        self.device_combo = ttk.Combobox(device_select_frame, 
+                                         textvariable=self.selected_device,
+                                         state='readonly',
+                                         width=47)
+        self.device_combo.pack(side='left', fill='x', expand=True, padx=(0, 10))
+        
+        refresh_btn = ttk.Button(device_select_frame, text="Refresh", 
+                                command=self.refresh_devices)
+        refresh_btn.pack(side='left')
+        
+        # Warning label
+        warning_frame = ttk.Frame(main_frame)
+        warning_frame.pack(fill='x', pady=(0, 20))
+        
+        warning_label = ttk.Label(warning_frame,
+                                 text="Warning: All data on the selected device will be erased!",
+                                 style='Subtitle.TLabel',
+                                 foreground='#ff6b6b')
+        warning_label.pack()
+        
+        # Action buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill='x', pady=(0, 10))
+        
+        self.flash_btn = ttk.Button(button_frame, text="Flash Image", 
+                                    style='Accent.TButton',
+                                    command=self.flash_image)
+        self.flash_btn.pack(side='left', expand=True, fill='x', padx=(0, 10))
+        
+        self.format_btn = ttk.Button(button_frame, text="Format Device",
+                                     command=self.format_device)
+        self.format_btn.pack(side='left', expand=True, fill='x')
+        
+        # Progress section
+        progress_frame = ttk.LabelFrame(main_frame, text=" Progress ", padding=15)
+        progress_frame.pack(fill='both', expand=True)
+        
+        self.progress_bar = ttk.Progressbar(progress_frame, mode='indeterminate')
+        self.progress_bar.pack(fill='x', pady=(0, 10))
+        
+        self.status_label = ttk.Label(progress_frame, text="Ready", 
+                                     style='Subtitle.TLabel')
+        self.status_label.pack()
+        
+        # Footer
+        footer_frame = ttk.Frame(main_frame)
+        footer_frame.pack(fill='x', pady=(10, 0))
+        
+        footer_text = ttk.Label(footer_frame,
+                               text="TablaRaza v2.0 - Open Source ISO/IMG Flasher",
+                               style='Subtitle.TLabel')
+        footer_text.pack()
+    
+    def browse_image(self):
+        """Open file dialog to select image"""
+        filename = filedialog.askopenfilename(
+            title="Select Image File",
+            filetypes=[
+                ("Image Files", "*.iso *.img"),
+                ("ISO Files", "*.iso"),
+                ("IMG Files", "*.img"),
+                ("All Files", "*.*")
+            ]
+        )
+        
+        if filename:
+            self.image_path.set(filename)
+            self.update_status(f"Selected: {Path(filename).name}")
+    
+    def refresh_devices(self):
+        """Refresh the list of available devices"""
+        self.update_status("Scanning for devices...")
+        
+        self.devices = DeviceManager.get_devices()
+        
+        if self.devices:
+            device_names = [dev['name'] for dev in self.devices]
+            self.device_combo['values'] = device_names
+            self.device_combo.current(0)
+            self.update_status(f"Found {len(self.devices)} device(s)")
+        else:
+            self.device_combo['values'] = []
+            self.update_status("No removable devices found")
+    
+    def flash_image(self):
+        """Start the flashing process"""
+        # Validate inputs
+        if not self.image_path.get():
+            messagebox.showerror("Error", "Please select an image file")
+            return
+        
+        if not self.selected_device.get():
+            messagebox.showerror("Error", "Please select a target device")
+            return
+        
+        # Confirm action
+        response = messagebox.askyesno(
+            "Confirm Flash",
+            f"This will erase all data on {self.selected_device.get()}\n\n"
+            "Are you sure you want to continue?"
+        )
+        
+        if not response:
+            return
+        
+        # Get selected device path
+        device_idx = self.device_combo.current()
+        device_path = self.devices[device_idx]['path']
+        
+        # Disable buttons
+        self.flash_btn.config(state='disabled')
+        self.format_btn.config(state='disabled')
+        
+        # Start progress bar
+        self.progress_bar.start()
+        
+        # Run flashing in thread
+        thread = threading.Thread(
+            target=self._flash_thread,
+            args=(self.image_path.get(), device_path),
+            daemon=True
+        )
+        thread.start()
+    
+    def _flash_thread(self, image_path, device_path):
+        """Thread function for flashing"""
+        try:
+            FlashManager.flash_image(image_path, device_path, self.update_status)
+            
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Success",
+                "Image flashed successfully!"
+            ))
             
         except Exception as e:
-            messagebox.showerror("Error", 
-                               "Failed to get administrator privileges.\n\n" + str(e))
-            return False
+            self.root.after(0, lambda: messagebox.showerror(
+                "Error",
+                f"Flash failed: {str(e)}"
+            ))
+        
+        finally:
+            self.root.after(0, self._flash_complete)
+    
+    def _flash_complete(self):
+        """Re-enable UI after flashing"""
+        self.progress_bar.stop()
+        self.flash_btn.config(state='normal')
+        self.format_btn.config(state='normal')
+        self.update_status("Ready")
+    
+    def format_device(self):
+        """Format the selected device"""
+        if not self.selected_device.get():
+            messagebox.showerror("Error", "Please select a device to format")
+            return
+        
+        response = messagebox.askyesno(
+            "Confirm Format",
+            f"This will erase all data on {self.selected_device.get()}\n\n"
+            "Are you sure you want to continue?"
+        )
+        
+        if not response:
+            return
+        
+        device_idx = self.device_combo.current()
+        device_path = self.devices[device_idx]['path']
+        
+        self.update_status("Formatting device...")
+        self.progress_bar.start()
+        
+        thread = threading.Thread(
+            target=self._format_thread,
+            args=(device_path,),
+            daemon=True
+        )
+        thread.start()
+    
+    def _format_thread(self, device_path):
+        """Thread function for formatting"""
+        try:
+            system = platform.system()
+            
+            if system == "Windows":
+                drive_letter = device_path[0]
+                subprocess.run(['format', f'{drive_letter}:', '/FS:FAT32', '/Q', '/Y'],
+                             check=True, shell=True)
+            
+            elif system == "Darwin":
+                subprocess.run(['diskutil', 'eraseDisk', 'FAT32', 'TABLARAZA', device_path],
+                             check=True)
+            
+            elif system == "Linux":
+                subprocess.run(['sudo', 'mkfs.vfat', '-F', '32', device_path],
+                             check=True)
+            
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Success",
+                "Device formatted successfully!"
+            ))
+            
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror(
+                "Error",
+                f"Format failed: {str(e)}"
+            ))
+        
+        finally:
+            self.root.after(0, self._format_complete)
+    
+    def _format_complete(self):
+        """Re-enable UI after formatting"""
+        self.progress_bar.stop()
+        self.update_status("Ready")
+        self.refresh_devices()
+    
+    def update_status(self, message):
+        """Update status label"""
+        self.root.after(0, lambda: self.status_label.config(text=message))
 
-    def run_with_sudo(self, cmd, **kwargs):
-        """Run a command with sudo on macOS, using stored password"""
-        if platform.system() != "Darwin":
-            return subprocess.run(cmd, **kwargs)
-            
-        if not self.sudo_password and not self.get_sudo_password():
-            raise Exception("Administrator privileges required")
-            
-        sudo_cmd = ['sudo', '-S'] + cmd
-        kwargs['input'] = self.sudo_password + '\n'
-        kwargs['text'] = True
-        return subprocess.run(sudo_cmd, **kwargs)
+
+def main():
+    """Main entry point"""
+    # Check if running on macOS and warn about permissions
+    if platform.system() == "Darwin":
+        print("Note: On macOS, you may be prompted for administrator password")
+    
+    # Check if running on Linux and warn about permissions
+    if platform.system() == "Linux":
+        if os.geteuid() != 0:
+            print("Note: On Linux, you may need to run with sudo for device access")
+    
+    root = Tk()
+    app = TablaRazaGUI(root)
+    root.mainloop()
+
 
 if __name__ == "__main__":
-    # Check for admin/root privileges on Linux only
-    def is_admin():
-        try:
-            if platform.system() == "Windows":
-                import ctypes
-                return ctypes.windll.shell32.IsUserAnAdmin() != 0
-            elif platform.system() == "Linux":
-                return os.geteuid() == 0
-            return True
-        except:
-            return False
-    
-    if platform.system() == "Linux" and not is_admin():
-        print("This program requires administrator privileges to write to devices.")
-        print("Please run it with sudo.")
-        sys.exit(1)
-    
-    app = ISOFlasher()
-    app.mainloop()
+    main()
