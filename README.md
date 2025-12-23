@@ -100,4 +100,4 @@ To make this program run without this, it would have to be signed by an apple de
 
 ## License
 
-[MIT](LICENSE)
+[General Public License](LICENSE)
